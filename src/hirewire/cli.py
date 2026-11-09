@@ -1,10 +1,13 @@
 import json
+from collections.abc import Callable
 from typing import Any
 
 import typer
+from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 
-from hirewire.config.paths import get_google_folder_id
+from hirewire.config.paths import resolve_project_path
+from hirewire.config.settings import get_settings
 from hirewire.integrations.google import drive, sheets
 from hirewire.integrations.google.auth import authorize_once, get_credentials
 
@@ -21,10 +24,16 @@ def _print_json(value: Any) -> None:
     typer.echo(json.dumps(value, indent=2, ensure_ascii=False, default=str))
 
 
-def _run(operation: Any) -> None:
+def _run(operation: Callable[[], Any]) -> None:
     try:
         _print_json(operation())
-    except (HttpError, OSError, ValueError, RuntimeError) as exc:
+    except (
+        GoogleAuthError,
+        HttpError,
+        OSError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -32,12 +41,18 @@ def _run(operation: Any) -> None:
 @google_app.command("auth")
 def google_auth() -> None:
     """Perform a fresh interactive OAuth authorization."""
-    _run(
-        lambda: {
-            "authorized": bool(authorize_once().valid),
-            "token_file": "credentials/token.json",
+
+    def operation() -> dict[str, Any]:
+        settings = get_settings()
+        credentials = authorize_once(settings)
+        return {
+            "authorized": credentials.valid,
+            "token_file": str(
+                resolve_project_path(settings.google.token_file)
+            ),
         }
-    )
+
+    _run(operation)
 
 
 @google_app.command("status")
@@ -45,7 +60,8 @@ def google_status() -> None:
     """Show the authenticated Google account and configured folder."""
 
     def operation() -> dict[str, Any]:
-        credentials = get_credentials()
+        settings = get_settings()
+        credentials = get_credentials(settings)
         from googleapiclient.discovery import build
 
         about = (
@@ -59,9 +75,13 @@ def google_status() -> None:
         return {
             "authenticated": credentials.valid,
             "user": about.get("user", {}),
-            "configured_folder_id": get_google_folder_id(),
-            "credentials_file": "credentials/oauth-client.json",
-            "token_file": "credentials/token.json",
+            "configured_folder_id": settings.google.folder_id,
+            "credentials_file": str(
+                resolve_project_path(settings.google.oauth_client_file)
+            ),
+            "token_file": str(
+                resolve_project_path(settings.google.token_file)
+            ),
         }
 
     _run(operation)
@@ -78,14 +98,24 @@ def drive_list(
     page_size: int = typer.Option(100, min=1, max=1000),
 ) -> None:
     """List files in the configured folder, or all Drive files with --all."""
-    selected_folder = folder_id
-    if not all_files and selected_folder is None:
-        selected_folder = get_google_folder_id()
-    _run(
-        lambda: drive.list_files(
-            folder_id=selected_folder, page_size=page_size
+
+    def operation() -> list[dict[str, Any]]:
+        selected_folder = (
+            None if all_files else (folder_id.strip() if folder_id else None)
         )
-    )
+        if not all_files and selected_folder is None:
+            selected_folder = get_settings().google.folder_id
+        if not all_files and selected_folder is None:
+            raise ValueError(
+                "No Google Drive folder configured. "
+                "Set HIREWIRE_GOOGLE__FOLDER_ID or pass --folder-id."
+            )
+        return drive.list_files(
+            folder_id=selected_folder,
+            page_size=page_size,
+        )
+
+    _run(operation)
 
 
 @sheets_app.command("inspect")

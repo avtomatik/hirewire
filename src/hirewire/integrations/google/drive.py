@@ -41,7 +41,10 @@ def list_files(
                 pageSize=page_size,
                 pageToken=page_token,
                 orderBy="name",
-                fields="nextPageToken, files(id,name,mimeType,modifiedTime,webViewLink,parents)",
+                fields=(
+                    "nextPageToken, "
+                    "files(id,name,mimeType,modifiedTime,webViewLink,parents)"
+                ),
             )
             .execute()
         )

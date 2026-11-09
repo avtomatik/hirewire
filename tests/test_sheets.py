@@ -40,3 +40,30 @@ def test_append_rejects_empty_values():
 def test_read_rejects_empty_spreadsheet_id():
     with pytest.raises(ValueError, match="spreadsheet_id"):
         read_values("", "Sheet1!A1", service=Mock())
+
+
+def test_append_values_passes_rows_and_append_options():
+    service = Mock()
+    append_values(
+        "spreadsheet-id",
+        "Applications",
+        [["APP-001", "Acme", "Applied"]],
+        service=service,
+    )
+    kwargs = (
+        service.spreadsheets.return_value.values.return_value.append.call_args.kwargs
+    )
+    assert kwargs["range"] == "Applications"
+    assert kwargs["body"] == {"values": [["APP-001", "Acme", "Applied"]]}
+    assert kwargs["valueInputOption"] == "USER_ENTERED"
+    assert kwargs["insertDataOption"] == "INSERT_ROWS"
+
+
+def test_update_rejects_blank_range():
+    with pytest.raises(ValueError, match="range_name"):
+        update_values("spreadsheet-id", "  ", [["value"]], service=Mock())
+
+
+def test_append_rejects_blank_spreadsheet_id():
+    with pytest.raises(ValueError, match="spreadsheet_id"):
+        append_values("", "Applications", [["value"]], service=Mock())

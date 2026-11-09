@@ -24,7 +24,8 @@ def inspect_spreadsheet(
             spreadsheetId=spreadsheet_id,
             fields=(
                 "spreadsheetId,spreadsheetUrl,properties(title),"
-                "sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))"
+                "sheets(properties("
+                "sheetId,title,index,gridProperties(rowCount,columnCount)))"
             ),
         )
         .execute()
