@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hirewire.config.paths import BASE_DIR, CREDENTIALS_DIR
+from hirewire.integrations.hhru.settings import HHRUSettings
 
 
 class GoogleSettings(BaseModel):
@@ -46,6 +47,7 @@ class Settings(BaseSettings):
         "INFO"
     )
     google: GoogleSettings = Field(default_factory=GoogleSettings)
+    hhru: HHRUSettings = Field(default_factory=HHRUSettings)
 
 
 @lru_cache(maxsize=1)

@@ -6,18 +6,21 @@ import typer
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 
+from hirewire.cli_sources import hhru_app, telegram_app
 from hirewire.config.paths import resolve_project_path
 from hirewire.config.settings import get_settings
 from hirewire.integrations.google import drive, sheets
 from hirewire.integrations.google.auth import authorize_once, get_credentials
 
-app = typer.Typer(help="Hirewire job-search tracker.")
+app = typer.Typer(help="Hirewire personal job-search intelligence.")
 google_app = typer.Typer(help="Google Workspace integration.")
 drive_app = typer.Typer(help="Google Drive operations.")
 sheets_app = typer.Typer(help="Google Sheets operations.")
 app.add_typer(google_app, name="google")
 google_app.add_typer(drive_app, name="drive")
 google_app.add_typer(sheets_app, name="sheets")
+app.add_typer(hhru_app, name="hhru")
+app.add_typer(telegram_app, name="telegram")
 
 
 def _print_json(value: Any) -> None:

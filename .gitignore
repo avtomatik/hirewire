@@ -141,8 +141,15 @@ credentials/
 .env
 .env.*
 !.env.example
-*.json
 *.token
 token.json
 oauth-client.json
 service-account.json
+
+# Private provider sessions and exported account snapshots
+.state/
+snapshots/
+private/
+exports/
+*.session
+*.session-journal

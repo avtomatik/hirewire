@@ -1,165 +1,139 @@
 # Hirewire
 
-Hirewire is a personal job-search tracker intended to grow into a small job-search
-intelligence system. The first implementation establishes a reliable Google
-Workspace integration and command-line interface. It deliberately does **not**
-introduce a premature application database or a web backend.
+A personal job-search intelligence application that brings together professional profiles, job opportunities and application activity. Hirewire provides a single CLI and keeps provider-specific code independent.
 
-## Current scope
+This **0.2.0 consolidation snapshot** combines Hirewire's existing Google Workspace integration, the former SkillMapper HeadHunter API implementation, and an initial offline Telegram Desktop JSON importer inspired by JobMiner.
 
-- Reusable Google OAuth credentials for a desktop application.
-- Google Drive file discovery, including folder-scoped listing.
-- Google Sheets inspection, reading, updating, and appending.
-- A CLI that owns terminal interaction; integration modules return data and
-  raise errors rather than prompting.
-- Unit tests using mocked Google API services.
+## What works today
 
-The intended longer-term direction is to make a local SQLite database the
-canonical store and use Google Sheets as a convenient human-facing projection.
-That domain layer is not part of this first integration foundation.
+| Source | Implemented | Notes |
+| --- | --- | --- |
+| Google Workspace | OAuth, Drive, Sheets | Original Hirewire behavior and settings retained |
+| HeadHunter official API | Original OAuth, HTTP, resumes and recommendations | **Disabled by default** because access is currently unavailable; opt in only if authorized |
+| HeadHunter local account snapshots | Inspect saved `.html`, `.htm`, `.txt`, `.json`; export extracted text/links or original JSON | Offline, no HH network requests |
+| HeadHunter browser | Optional Playwright, **manually controlled single-page capture** | Experimental and permission-dependent; no stored password, automatic login or unattended scraping |
+| Telegram | Inspect/extract Telegram Desktop `result.json` messages | Offline only; no Telegram login, scraping, vacancy extraction or monitoring |
+
+**Not implemented:** live HeadHunter website scraping or unattended login, Telegram live acquisition, canonical vacancy models, cross-source deduplication, a database, or synchronization. The page parser is generic, not a verified parser for specific authenticated HH.ru pages. Avoid treating it as structured application-history extraction until real page fixtures are available.
 
 ## Requirements
 
-- Python 3.14+
-- [`uv`](https://docs.astral.sh/uv/)
-- A Google Cloud project with the Google Sheets API and Google Drive API enabled.
-- A Desktop OAuth client downloaded from Google Cloud Console.
-
-## Setup
+- Python **3.14+** and [`uv`](https://docs.astral.sh/uv/).
+- Google API OAuth credentials only for Google operations.
+- HeadHunter API credentials only if your application is granted API access again.
 
 ```bash
-git clone <your-repository-url>
-cd hirewire
-
-# Install the project and development dependencies.
-uv sync
-
-# Create the local credentials directory.
-mkdir -p credentials
-```
-
-Place the downloaded Desktop OAuth client JSON at:
-
-```text
-credentials/oauth-client.json
-```
-
-The OAuth client and generated token are local secrets. They are ignored by Git.
-Do not commit them.
-
-Optional: copy `.env.example` to `.env` and set
-`HIREWIRE_GOOGLE__FOLDER_ID` to the Drive folder in which you want to keep
-Hirewire-related files. The application reads `.env` without an extra dependency.
-Alternatively, export the variable in your shell.
-
-## OAuth scopes
-
-The application requests:
-
-- `https://www.googleapis.com/auth/spreadsheets` — read and modify spreadsheet
-  content.
-- `https://www.googleapis.com/auth/drive.readonly` — discover and inspect Drive
-  files without modifying Drive contents.
-
-The first authorization opens a browser. If the OAuth consent screen is in
-Testing mode, the Google account must be listed as a test user. The access token
-is stored in `credentials/token.json` and refreshed when possible.
-
-To authorize again explicitly:
-
-```bash
-uv run hirewire google auth
-```
-
-## CLI
-
-Show available commands:
-
-```bash
+uv sync --locked
 uv run hirewire --help
 uv run hirewire google --help
+uv run hirewire hhru --help
+uv run hirewire telegram --help
 ```
 
-Authorize and check the current Google account:
+### Google Workspace
+
+The original commands remain available:
 
 ```bash
 uv run hirewire google auth
 uv run hirewire google status
-```
-
-List Drive files (optionally restricted to the configured folder):
-
-```bash
-uv run hirewire google drive list
 uv run hirewire google drive list --all
-uv run hirewire google drive list --folder-id YOUR_FOLDER_ID
+uv run hirewire google sheets inspect YOUR_SHEET_ID
+uv run hirewire google sheets read YOUR_SHEET_ID 'Sheet1!A1:B5'
 ```
 
-Inspect a spreadsheet and its worksheets:
+See `.env.example` for environment variables and the existing `config/paths.py` for relative paths. The Google credential paths have **not** been migrated or modified.
+
+### HeadHunter account imports (offline)
+
+Save a page from your own account using your browser, or export an account document you are entitled to possess. No live HeadHunter requests are made by these commands.
 
 ```bash
-uv run hirewire google sheets inspect SPREADSHEET_ID
+uv run hirewire hhru status
+uv run hirewire hhru imports inspect snapshots/my-applications.html
+uv run hirewire hhru imports extract snapshots/my-applications.html --output private/my-applications.json
 ```
 
-Read values:
+- `inspect` shows safe metadata (filename, title, character count and matching vacancy-link count); it intentionally does not print your full account text.
+- `extract` creates a new private JSON file with page text (excluding scripts/styles) and normalized vacancy URLs; for `.json`, it preserves the supplied payload rather than inventing a schema.
+- Output files are created with restricted permissions where supported, **will not overwrite** existing files, and may contain sensitive personal data.
+- For HTML, only vacancy links matching `https://hh.ru/vacancy/<id>` are collected; page text remains largely unstructured.
+- Source imports have a 10 MiB size limit; a different parser can be added when actual examples justify it.
+
+### Preserved HeadHunter API
+
+The original SkillMapper client has been placed under `hirewire.integrations.hhru`. The API is deliberately **off** by default:
 
 ```bash
-uv run hirewire google sheets read SPREADSHEET_ID 'Sheet1!A1:D20'
+uv run hirewire hhru api resumes  # returns a disabled-access message by default
 ```
 
-Update a range (values are supplied as JSON):
+**Only if HeadHunter restores or grants the necessary API authorization**, set:
+
+```dotenv
+HIREWIRE_HHRU__API_ENABLED=true
+HIREWIRE_HHRU__OAUTH__CLIENT_ID=...
+HIREWIRE_HHRU__OAUTH__CLIENT_SECRET=...
+HIREWIRE_HHRU__TOKEN_STORE__PATH=.state/hhru/tokens.json
+```
+
+Then explicitly authorize and request data:
 
 ```bash
-uv run hirewire google sheets update SPREADSHEET_ID 'Sheet1!A1:B2'   '[["Company", "Role"], ["Example Ltd", "Python Engineer"]]'
+uv run hirewire hhru api auth
+uv run hirewire hhru api resumes
+uv run hirewire hhru api recommended --resume-id YOUR_RESUME_ID
+uv run hirewire hhru api recommended    # original all-resume behavior
 ```
 
-Append rows to a worksheet:
+The API's original OAuth, token provider, token store, HTTP adapter, and response schemas have been preserved with package-import changes. No silent token migration is performed: to reuse a pre-existing SkillMapper `.state/tokens.json`, explicitly set `HIREWIRE_HHRU__TOKEN_STORE__PATH=.state/tokens.json`. Relative paths continue to use Hirewire's existing project-root resolver.
+
+### Optional Playwright: manually controlled capture
+
+This command opens an ordinary visible browser. **You log in and navigate manually**; the program waits for an explicit Enter key confirmation, then saves only the displayed page. It does not submit your email/password, bypass security challenges, crawl pages, or persist a browser session. HeadHunter may prohibit browser-based automated extraction; obtain suitable authorization before using it against their site.
+
+Playwright is deliberately **not a core or lockfile dependency**. It is installed for one invocation only:
 
 ```bash
-uv run hirewire google sheets append SPREADSHEET_ID Sheet1   '[["Example Ltd", "Python Engineer"], ["Another Ltd", "Data Engineer"]]'
+uv run --with playwright playwright install chromium
+uv run --with playwright hirewire hhru browser capture --output private/hh-saved.html
+uv run hirewire hhru imports inspect private/hh-saved.html
 ```
 
-All commands print machine-readable JSON where practical. Errors are written to
-stderr and produce a non-zero exit status.
+Treat the resulting HTML as confidential: hidden fields and embedded page metadata may contain sensitive material. Do not commit, publish or upload it. Use your browser's built-in Save Page feature instead if you do not have permission to automate capture.
 
-## Development
+### Telegram export imports (JobMiner first slice)
+
+Export a Telegram channel or chat as machine-readable JSON using Telegram Desktop. Then:
 
 ```bash
-uv run pytest
+uv run hirewire telegram imports inspect exports/result.json
+uv run hirewire telegram imports extract exports/result.json --output private/telegram-messages.json
 ```
 
-The tests do not require Google credentials or network access. They exercise
-pure configuration/parsing behavior and mock the Google API service boundary.
+Only message text, date, message ID and exported channel name are extracted. Rich-text fragment arrays are flattened. **This is not yet vacancy recognition or Telegram scraping.** A live Telegram provider will be considered separately, based on actual acquisition requirements and permitted API methods.
 
-## Project structure
+## Configuration and secrets
 
-```text
-.
-├── .env.example
-├── .gitignore
-├── README.md
-├── pyproject.toml
-├── credentials/                 # local only; ignored
-├── src/hirewire/
-│   ├── __init__.py
-│   ├── __main__.py
-│   ├── cli.py
-│   ├── config/
-│   │   ├── __init__.py
-│   │   └── paths.py
-│   └── integrations/google/
-│       ├── __init__.py
-│       ├── auth.py
-│       ├── drive.py
-│       └── sheets.py
-└── tests/
+Copy `.env.example` to `.env` and fill in only the settings needed for an enabled provider. `GoogleSettings` and `config/paths.py` remain the originals. `hhru` settings are nested under `HIREWIRE_HHRU__`, with HeadHunter API credentials entirely optional.
+
+Ignored local data include `.env`, `.state/`, `credentials/`, `snapshots/`, `private/`, `exports/`, and Telegram session files. **Do not place token files, saved account pages or message exports elsewhere in the repository.** JSON source fixtures are no longer globally excluded, so review commits for secrets.
+
+## Tests and environment caveat
+
+```bash
+uv run --locked pytest
 ```
 
-## Security notes
+Core source-only tests were exercised in an available Python 3.13 environment, but the project intentionally requires Python 3.14+ and the full Google test suite could not run there due to unavailable Google API libraries. A successful `uv sync --locked`, `uv lock --check`, CLI smoke test and full pytest run on Python 3.14 are required before production use. See `MIGRATION.md` for precise verification limits and rollback instructions.
 
-- Never commit `credentials/`, OAuth client JSON, token JSON, or service-account
-  credentials.
-- `.gitignore` prevents future accidental additions but does not remove secrets
-  already committed to Git history. If a credential was committed, revoke or
-  rotate it in Google Cloud and clean the repository history as appropriate.
-- Do not share `token.json`; it contains reusable authorization material.
+## Development direction
+
+1. Verify the full merged Python 3.14 baseline and existing Google workflows.
+2. Stabilize account snapshot fixtures and structured import rules around real account pages.
+3. Consider Telegram live acquisition and vacancy parsing separately.
+4. Build domain workflows and SQLite persistence only when provider data demonstrates the need.
+
+## License
+
+MIT License. See the [LICENSE](LICENSE) file for details.
